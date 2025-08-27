@@ -1,5 +1,5 @@
 # Sử dụng một image Python làm nền
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # Thiết lập thư mục làm việc bên trong container
 WORKDIR /app
@@ -14,4 +14,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Default command
+
 CMD ["python", "pinbar_telegram_bot.py"]
