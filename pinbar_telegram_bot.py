@@ -13,7 +13,8 @@ import requests
 import os
 from datetime import datetime
 from typing import Dict, List, Optional
-from telegram import Bot
+from telegram.ext import Application
+from telegram import Update
 from telegram.constants import ParseMode
 from dotenv import load_dotenv
 
@@ -412,7 +413,8 @@ class SignalAnalyzer:
 # ==================== TELEGRAM NOTIFIER ====================
 class TelegramNotifier:
     def __init__(self):
-        self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        self.application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        self.bot = self.application.bot
         self.chat_id = TELEGRAM_CHAT_ID
     
     async def send_signal(self, symbol: str, timeframe: str, signal: Dict, indicators: Dict, pin_bar: Dict):
