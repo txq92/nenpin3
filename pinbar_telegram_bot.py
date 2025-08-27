@@ -47,7 +47,7 @@ PIN_BAR_MIN_TAIL_RATIO = 2.0   # Tail >= 2x body
 PIN_BAR_MIN_RANGE_RATIO = 1.5  # Range >= 1.5x ATR
 
 # Scan interval (seconds)
-SCAN_INTERVAL = 120  # 2 phút - phù hợp với timeframe 3m
+SCAN_INTERVAL = 60  # 1 phút - phù hợp với timeframe 3m
 
 # ==================== BINANCE CLIENT ====================
 class SimpleBinanceClient:
@@ -585,3 +585,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n👋 Goodbye!")
+
