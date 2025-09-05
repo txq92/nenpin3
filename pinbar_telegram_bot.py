@@ -31,7 +31,7 @@ if not TELEGRAM_CHAT_ID:
     raise ValueError("TELEGRAM_CHAT_ID not found in .env file")
 
 # Trading pairs để monitor
-TRADING_PAIRS = ['SUIUSDT', 'ETHUSDT', 'HYPEUSDT', 'SOLUSDT', 'ADAUSDT']
+TRADING_PAIRS = ['SUIUSDT', 'ETHUSDT', 'HYPEUSDT', 'SOLUSDT', 'ADAUSDT', 'ADAUSDT', 'PUMPUSDT', 'WLFIUSDT', 'ENAUSDT', 'AAVEUSDT']
 
 # Timeframes để scan
 TIMEFRAMES = ['3m', '15m']  # 3m for signals, 15m for trend confirmation
@@ -46,8 +46,43 @@ PIN_BAR_MIN_BODY_RATIO = 0.3   # Body <= 30% tổng chiều dài nến
 PIN_BAR_MIN_TAIL_RATIO = 2.0   # Tail >= 2x body  
 PIN_BAR_MIN_RANGE_RATIO = 1.5  # Range >= 1.5x ATR
 
+# Risk Management Parameters
+LONG_STOP_LOSS_RATIO = 0.03    # 3% stop loss for long positions
+LONG_TAKE_PROFIT_RATIO = 0.06  # 6% take profit for long positions
+SHORT_STOP_LOSS_RATIO = 0.03   # 3% stop loss for short positions
+SHORT_TAKE_PROFIT_RATIO = 0.06 # 6% take profit for short positions
+
 # Scan interval (seconds)
 SCAN_INTERVAL = 60  # 1 phút - phù hợp với timeframe 3m
+
+# Candle Close Validation Parameters
+CANDLE_CLOSE_BUFFER = 10  # Chỉ scan trong 15s đầu của nến mới (đảm bảo nến trước đã đóng)
+USE_CONFIRMED_CANDLE = True  # Sử dụng nến đã đóng hoàn toàn để analysis
+
+# ==================== HELPER FUNCTIONS ====================
+def should_scan_for_timeframe(timeframe: str) -> bool:
+    """Kiểm tra xem có nên scan cho timeframe này không dựa trên thời gian nến đóng"""
+    if not USE_CONFIRMED_CANDLE:
+        return True
+        
+    now = datetime.now()
+    
+    if timeframe == '3m':
+        # Chỉ scan trong 15s đầu của chu kỳ 3 phút mới
+        minutes_in_cycle = now.minute % 3
+        seconds = now.second
+        
+        # Nếu đang ở phút đầu của chu kỳ 3m và trong 15s đầu
+        return minutes_in_cycle == 0 and seconds <= CANDLE_CLOSE_BUFFER
+        
+    elif timeframe == '15m':
+        # Chỉ scan trong 15s đầu của chu kỳ 15 phút mới
+        minutes_in_cycle = now.minute % 15
+        seconds = now.second
+        
+        return minutes_in_cycle == 0 and seconds <= CANDLE_CLOSE_BUFFER
+    
+    return True
 
 # ==================== BINANCE CLIENT ====================
 class SimpleBinanceClient:
@@ -124,27 +159,32 @@ class TechnicalAnalysis:
             volume_sma = df['volume'].rolling(window=20).mean()
             
             # Support/Resistance (simplified)
-            recent_high = df['high'].rolling(window=20).max().iloc[-1]
-            recent_low = df['low'].rolling(window=20).min().iloc[-1]
+            recent_high = df['high'].rolling(window=40).max().iloc[-1]
+            recent_low = df['low'].rolling(window=40).min().iloc[-1]
             
-            current_price = df['close'].iloc[-1]
+            # Sử dụng nến đã đóng hoàn toàn cho indicators
+            indicator_index = -2 if USE_CONFIRMED_CANDLE and len(df) > 1 else -1
+            current_price = df['close'].iloc[indicator_index]
+            candle_timestamp = df.index[indicator_index]
+            
             return {
-                'rsi': rsi.iloc[-1] if len(rsi) > 0 else None,
-                'stoch_rsi_k': stoch_rsi_k.iloc[-1] if len(stoch_rsi_k) > 0 else None,
-                'stoch_rsi_d': stoch_rsi_d.iloc[-1] if len(stoch_rsi_d) > 0 else None,
-                'macd': macd_line.iloc[-1] if len(macd_line) > 0 else None,
-                'macd_signal': macd_signal.iloc[-1] if len(macd_signal) > 0 else None,
-                'macd_histogram': macd_histogram.iloc[-1] if len(macd_histogram) > 0 else None,
-                'bb_upper': bb_upper.iloc[-1] if len(bb_upper) > 0 else None,
-                'bb_middle': bb_middle.iloc[-1] if len(bb_middle) > 0 else None,
-                'bb_lower': bb_lower.iloc[-1] if len(bb_lower) > 0 else None,
-                'ema20': ema20.iloc[-1] if len(ema20) > 0 else None,
-                'ema50': ema50.iloc[-1] if len(ema50) > 0 else None,
-                'atr': atr.iloc[-1] if len(atr) > 0 else None,
-                'volume_ratio': df['volume'].iloc[-1] / volume_sma.iloc[-1] if len(volume_sma) > 0 and volume_sma.iloc[-1] > 0 else 1,
+                'rsi': rsi.iloc[indicator_index] if len(rsi) > abs(indicator_index) else None,
+                'stoch_rsi_k': stoch_rsi_k.iloc[indicator_index] if len(stoch_rsi_k) > abs(indicator_index) else None,
+                'stoch_rsi_d': stoch_rsi_d.iloc[indicator_index] if len(stoch_rsi_d) > abs(indicator_index) else None,
+                'macd': macd_line.iloc[indicator_index] if len(macd_line) > abs(indicator_index) else None,
+                'macd_signal': macd_signal.iloc[indicator_index] if len(macd_signal) > abs(indicator_index) else None,
+                'macd_histogram': macd_histogram.iloc[indicator_index] if len(macd_histogram) > abs(indicator_index) else None,
+                'bb_upper': bb_upper.iloc[indicator_index] if len(bb_upper) > abs(indicator_index) else None,
+                'bb_middle': bb_middle.iloc[indicator_index] if len(bb_middle) > abs(indicator_index) else None,
+                'bb_lower': bb_lower.iloc[indicator_index] if len(bb_lower) > abs(indicator_index) else None,
+                'ema20': ema20.iloc[indicator_index] if len(ema20) > abs(indicator_index) else None,
+                'ema50': ema50.iloc[indicator_index] if len(ema50) > abs(indicator_index) else None,
+                'atr': atr.iloc[indicator_index] if len(atr) > abs(indicator_index) else None,
+                'volume_ratio': df['volume'].iloc[indicator_index] / volume_sma.iloc[indicator_index] if len(volume_sma) > abs(indicator_index) and volume_sma.iloc[indicator_index] > 0 else 1,
                 'resistance': recent_high,
                 'support': recent_low,
-                'current_price': current_price
+                'current_price': current_price,
+                'candle_timestamp': candle_timestamp
             }
         except:
             return {}
@@ -153,7 +193,10 @@ class TechnicalAnalysis:
     def detect_pin_bar(df: pd.DataFrame) -> Dict:
         """Phát hiện Pin Bar pattern"""
         try:
-            candle = df.iloc[-1]
+            # Sử dụng nến đã đóng hoàn toàn (nến trước) nếu USE_CONFIRMED_CANDLE = True
+            candle_index = -2 if USE_CONFIRMED_CANDLE and len(df) > 1 else -1
+            candle = df.iloc[candle_index]
+            candle_timestamp = df.index[candle_index]
             
             open_price = candle['open']
             high_price = candle['high']
@@ -198,7 +241,9 @@ class TechnicalAnalysis:
                     'is_pin_bar': True,
                     'type': pin_bar_type,
                     'strength': round(strength, 1),
-                    'tail_ratio': round(tail_ratio, 2)
+                    'tail_ratio': round(tail_ratio, 2),
+                    'candle_timestamp': candle_timestamp,
+                    'candle_close': close_price
                 }
             
             return {'is_pin_bar': False}
@@ -437,7 +482,14 @@ class TelegramNotifier:
             message += f"📊 <b>Signal:</b> <b>{signal['type']}</b> {trend_emoji}\n"
             message += f"🎯 <b>Confidence:</b> {signal['confidence']}%\n"
             message += f"📈 <b>Win Rate:</b> {signal.get('win_rate', 50)}%\n"
-            message += f"💵 <b>Price:</b> ${indicators['current_price']:.4f}\n\n"
+            message += f"💵 <b>Entry Price:</b> ${indicators['current_price']:.4f}\n"
+            
+            # Thêm timestamp của nến được phân tích
+            candle_time = indicators.get('candle_timestamp')
+            if candle_time:
+                message += f"🕐 <b>Candle Time:</b> {candle_time.strftime('%Y-%m-%d %H:%M')}\n\n"
+            else:
+                message += "\n"
             
             # Technical details
             message += f"📈 <b>Indicators:</b>\n"
@@ -455,11 +507,11 @@ class TelegramNotifier:
             
             # Risk levels
             if signal['type'] == 'LONG':
-                stop_loss = indicators['current_price'] * 0.98
-                take_profit = indicators['current_price'] * 1.04
+                stop_loss = indicators['current_price'] * (1 - LONG_STOP_LOSS_RATIO)
+                take_profit = indicators['current_price'] * (1 + LONG_TAKE_PROFIT_RATIO)
             else:
-                stop_loss = indicators['current_price'] * 1.02
-                take_profit = indicators['current_price'] * 0.96
+                stop_loss = indicators['current_price'] * (1 + SHORT_STOP_LOSS_RATIO)
+                take_profit = indicators['current_price'] * (1 - SHORT_TAKE_PROFIT_RATIO)
             
             message += f"\n⚠️ <b>Risk Management:</b>\n"
             message += f"• Stop Loss: ${stop_loss:.4f}\n"
@@ -491,6 +543,10 @@ class PinBarTelegramBot:
         """Scan một symbol và timeframe"""
         # Chỉ tìm Pin Bar trên timeframe 3m
         if timeframe != '3m':
+            return
+            
+        # Kiểm tra timing - chỉ scan khi nến đã đóng hoàn toàn
+        if not should_scan_for_timeframe(timeframe):
             return
             
         # Get market data cho cả 3m và 15m
@@ -549,6 +605,8 @@ class PinBarTelegramBot:
         print(f"📊 Monitoring: {', '.join(TRADING_PAIRS)}")
         print(f"⏰ Timeframes: {', '.join(TIMEFRAMES)}")
         print(f"🔄 Scan interval: {SCAN_INTERVAL} seconds")
+        print(f"✅ Confirmed candle: {'Enabled' if USE_CONFIRMED_CANDLE else 'Disabled'}")
+        print(f"⏱️ Scan window: {CANDLE_CLOSE_BUFFER}s after candle close")
         print("-" * 50)
         
         # Send startup message
@@ -558,7 +616,9 @@ class PinBarTelegramBot:
                 text="🤖 <b>Pin Bar Bot Started</b>\n\n"
                      f"📊 Monitoring: {', '.join(TRADING_PAIRS)}\n"
                      f"⏰ Timeframes: {', '.join(TIMEFRAMES)}\n"
-                     f"🔄 Scanning every {SCAN_INTERVAL//60} minutes",
+                     f"🔄 Scanning every {SCAN_INTERVAL//60} minutes\n"
+                     f"✅ Confirmed Candles: {'Enabled' if USE_CONFIRMED_CANDLE else 'Disabled'}\n"
+                     f"⏱️ Scan Window: {CANDLE_CLOSE_BUFFER}s after candle close",
                 parse_mode='HTML'
             )
         except:
