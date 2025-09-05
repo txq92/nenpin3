@@ -41,10 +41,15 @@ RSI_PERIOD = 14
 RSI_OVERSOLD = 30
 RSI_OVERBOUGHT = 70
 
-# Pin Bar Detection Parameters
-PIN_BAR_MIN_BODY_RATIO = 0.3   # Body <= 30% tổng chiều dài nến
-PIN_BAR_MIN_TAIL_RATIO = 2.0   # Tail >= 2x body  
-PIN_BAR_MIN_RANGE_RATIO = 1.5  # Range >= 1.5x ATR
+# Pin Bar Detection Parameters (Updated for realistic conditions)
+PIN_BAR_MIN_BODY_RATIO = 0.4   # Body <= 40% tổng chiều dài nến (nới lỏng từ 30%)
+PIN_BAR_MIN_TAIL_RATIO = 1.2   # Tail >= 1.2x body (giảm từ 2.0x)  
+PIN_BAR_MIN_RANGE_RATIO = 1.1  # Range >= 1.1x ATR (giảm từ 1.5x)
+
+# Alternative Pin Bar Detection (More flexible)
+PIN_BAR_ALT_BODY_RATIO = 0.5   # Alternative: Body <= 50%
+PIN_BAR_ALT_TAIL_RATIO = 1.0   # Alternative: Tail >= 1.0x body
+PIN_BAR_MIN_TAIL_SIZE = 0.02   # Minimum tail size as % of price (0.2%)
 
 # Risk Management Parameters
 LONG_STOP_LOSS_RATIO = 0.03    # 3% stop loss for long positions
@@ -55,8 +60,8 @@ SHORT_TAKE_PROFIT_RATIO = 0.06 # 6% take profit for short positions
 # Scan interval (seconds)
 SCAN_INTERVAL = 60  # 1 phút - phù hợp với timeframe 3m
 
-# Candle Close Validation Parameters
-CANDLE_CLOSE_BUFFER = 10  # Chỉ scan trong 15s đầu của nến mới (đảm bảo nến trước đã đóng)
+# Candle Close Validation Parameters (Updated for better coverage)
+CANDLE_CLOSE_BUFFER = 30  # Scan trong 30s đầu của nến mới (tăng từ 10s)
 USE_CONFIRMED_CANDLE = True  # Sử dụng nến đã đóng hoàn toàn để analysis
 
 # ==================== HELPER FUNCTIONS ====================
@@ -218,22 +223,49 @@ class TechnicalAnalysis:
             current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else total_range
             range_ratio = total_range / current_atr if current_atr > 0 else 1
             
-            # Kiểm tra điều kiện Pin Bar
+            # Kiểm tra điều kiện Pin Bar với nhiều tiêu chuẩn
             is_small_body = body_ratio <= PIN_BAR_MIN_BODY_RATIO
+            is_alt_small_body = body_ratio <= PIN_BAR_ALT_BODY_RATIO
             is_significant_range = range_ratio >= PIN_BAR_MIN_RANGE_RATIO
             
             pin_bar_type = None
             tail_ratio = 0
             
-            if is_small_body and is_significant_range:
-                # Bullish Pin Bar
-                if lower_shadow > 0 and lower_shadow / body >= PIN_BAR_MIN_TAIL_RATIO and lower_shadow > upper_shadow:
+            # Kiểm tra Bullish Pin Bar
+            if lower_shadow > 0 and lower_shadow > upper_shadow:
+                lower_tail_ratio = lower_shadow / body if body > 0 else float('inf')
+                lower_tail_size_pct = lower_shadow / close_price if close_price > 0 else 0
+                
+                # Tiêu chuẩn chính (nghiêm ngặt)
+                main_criteria = (is_small_body and is_significant_range and 
+                                lower_tail_ratio >= PIN_BAR_MIN_TAIL_RATIO)
+                
+                # Tiêu chuẩn phụ (linh hoạt hơn)
+                alt_criteria = (is_alt_small_body and 
+                               lower_tail_ratio >= PIN_BAR_ALT_TAIL_RATIO and
+                               lower_tail_size_pct >= PIN_BAR_MIN_TAIL_SIZE)
+                
+                if main_criteria or alt_criteria:
                     pin_bar_type = 'BULLISH'
-                    tail_ratio = lower_shadow / body
-                # Bearish Pin Bar
-                elif upper_shadow > 0 and upper_shadow / body >= PIN_BAR_MIN_TAIL_RATIO and upper_shadow > lower_shadow:
+                    tail_ratio = lower_tail_ratio
+            
+            # Kiểm tra Bearish Pin Bar
+            elif upper_shadow > 0 and upper_shadow > lower_shadow:
+                upper_tail_ratio = upper_shadow / body if body > 0 else float('inf')
+                upper_tail_size_pct = upper_shadow / close_price if close_price > 0 else 0
+                
+                # Tiêu chuẩn chính (nghiêm ngặt)
+                main_criteria = (is_small_body and is_significant_range and 
+                                upper_tail_ratio >= PIN_BAR_MIN_TAIL_RATIO)
+                
+                # Tiêu chuẩn phụ (linh hoạt hơn)
+                alt_criteria = (is_alt_small_body and 
+                               upper_tail_ratio >= PIN_BAR_ALT_TAIL_RATIO and
+                               upper_tail_size_pct >= PIN_BAR_MIN_TAIL_SIZE)
+                
+                if main_criteria or alt_criteria:
                     pin_bar_type = 'BEARISH'
-                    tail_ratio = upper_shadow / body
+                    tail_ratio = upper_tail_ratio
             
             if pin_bar_type:
                 strength = min(100, (tail_ratio * 20) + (range_ratio * 20) + ((1 - body_ratio) * 60))
@@ -442,18 +474,15 @@ class SignalAnalyzer:
                 confidence += 10
                 reasons.append(f"High volume ({volume_ratio:.1f}x)")
         
-        # Return signal for both trend-aligned and counter-trend signals
-        if confidence >= 40:  # Giảm ngưỡng để cho phép cả tín hiệu nghịch xu hướng
-            win_rate = min(90, max(35, win_rate))  # Giới hạn tỷ lệ thắng từ 35-90%
-            return {
-                'type': signal_type,
-                'confidence': min(100, confidence),
-                'reasons': reasons,
-                'win_rate': round(win_rate, 1),
-                'trend_status': trend_status
-            }
-        
-        return None
+        # Return signal - REMOVED confidence threshold, allow all signals
+        win_rate = min(90, max(35, win_rate))  # Giới hạn tỷ lệ thắng từ 35-90%
+        return {
+            'type': signal_type,
+            'confidence': min(100, confidence),
+            'reasons': reasons,
+            'win_rate': round(win_rate, 1),
+            'trend_status': trend_status
+        }
 
 # ==================== TELEGRAM NOTIFIER ====================
 class TelegramNotifier:
@@ -536,7 +565,6 @@ class PinBarTelegramBot:
     def __init__(self):
         self.binance = SimpleBinanceClient()
         self.telegram = TelegramNotifier()
-        self.last_signals = {}  # Prevent duplicate signals
         self.is_running = False
     
     async def scan_symbol(self, symbol: str, timeframe: str):
@@ -574,19 +602,9 @@ class PinBarTelegramBot:
         if not signal:
             return
         
-        # Check for duplicate
-        signal_key = f"{symbol}_{timeframe}_{signal['type']}"
-        current_time = datetime.now()
-        
-        if signal_key in self.last_signals:
-            last_time = self.last_signals[signal_key]
-            if (current_time - last_time).total_seconds() < 3600:  # 1 hour cooldown
-                return
-        
-        # Send signal
+        # Send signal - REMOVED duplicate prevention
         sent = await self.telegram.send_signal(symbol, timeframe, signal, indicators, pin_bar)
         if sent:
-            self.last_signals[signal_key] = current_time
             print(f"✅ Signal sent: {symbol} {timeframe} {signal['type']} ({signal['confidence']}%)")
     
     async def scan_all(self):
